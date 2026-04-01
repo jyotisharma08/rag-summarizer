@@ -1,3 +1,7 @@
+import os
+import streamlit as st
+
+st.write("Files:", os.listdir())
 import streamlit as st
 from rag_pipeline import RAGSummarizer
 
