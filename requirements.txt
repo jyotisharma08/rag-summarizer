@@ -3,5 +3,6 @@ faiss-cpu
 transformers
 sentence-transformers
 torch
+torchvision   # ⭐ ADD THIS
 pymupdf
 protobuf==3.20.3
