@@ -9,15 +9,18 @@ class RAGSummarizer:
         self.embed_model = None
         self.summarizer = None
 
+    # ✅ Lazy load models (prevents crash)
     def load_models(self):
         if self.embed_model is None or self.summarizer is None:
             from sentence_transformers import SentenceTransformer
             from transformers import pipeline
 
             self.embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+            # ✅ Use compatible model
             self.summarizer = pipeline(
-                "summarization",
-                model="sshleifer/distilbart-cnn-12-6"
+                "text2text-generation",
+                model="google/flan-t5-base"
             )
 
     def extract_text(self, file):
@@ -26,13 +29,16 @@ class RAGSummarizer:
             text = ""
             for page in doc:
                 text += page.get_text("text")
-            return text
+            return text.strip()
         else:
             return file.read().decode("utf-8")
 
     def chunk_text(self, text, chunk_size=100):
         words = text.split()
-        return [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
+        return [
+            " ".join(words[i:i+chunk_size])
+            for i in range(0, len(words), chunk_size)
+        ]
 
     def build_index(self, text):
         self.load_models()  # ✅ load here safely
@@ -65,15 +71,17 @@ class RAGSummarizer:
         key_chunks = self.get_key_chunks()
 
         if len(key_chunks) == 0:
-            return "No content"
+            return "⚠️ No meaningful content found."
 
         combined_text = " ".join(key_chunks)
 
+        prompt = f"Summarize the following text:\n{combined_text}"
+
         summary = self.summarizer(
-            combined_text,
+            prompt,
             max_length=max_len,
             min_length=min_len,
             do_sample=False
         )
 
-        return summary[0]['summary_text']
+        return summary[0]['generated_text']
