@@ -1,8 +1,8 @@
 streamlit
 faiss-cpu
-transformers
-sentence-transformers
-torch
-torchvision   # ⭐ ADD THIS
+transformers==4.36.2
+sentence-transformers==2.2.2
+torch==2.1.0
+torchvision
 pymupdf
 protobuf==3.20.3
