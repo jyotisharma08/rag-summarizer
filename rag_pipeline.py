@@ -1,27 +1,24 @@
 import fitz
-import faiss
 import numpy as np
-import streamlit as st
-from sentence_transformers import SentenceTransformer
-from transformers import pipeline
-
-# ✅ CACHE MODELS (IMPORTANT)
-@st.cache_resource
-def load_models():
-    embed_model = SentenceTransformer('all-MiniLM-L6-v2')
-    summarizer = pipeline(
-        "summarization",
-        model="sshleifer/distilbart-cnn-12-6"  # 🔥 lighter model
-    )
-    return embed_model, summarizer
-
+import faiss
 
 class RAGSummarizer:
     def __init__(self):
-        # ✅ load models safely
-        self.embed_model, self.summarizer = load_models()
         self.chunks = []
         self.index = None
+        self.embed_model = None
+        self.summarizer = None
+
+    def load_models(self):
+        if self.embed_model is None or self.summarizer is None:
+            from sentence_transformers import SentenceTransformer
+            from transformers import pipeline
+
+            self.embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+            self.summarizer = pipeline(
+                "summarization",
+                model="sshleifer/distilbart-cnn-12-6"
+            )
 
     def extract_text(self, file):
         if file.type == "application/pdf":
@@ -33,15 +30,17 @@ class RAGSummarizer:
         else:
             return file.read().decode("utf-8")
 
-    def chunk_text(self, text, chunk_size=100):  # 🔥 smaller = faster
+    def chunk_text(self, text, chunk_size=100):
         words = text.split()
         return [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
 
     def build_index(self, text):
+        self.load_models()  # ✅ load here safely
+
         self.chunks = self.chunk_text(text)
 
         if len(self.chunks) == 0:
-            raise ValueError("No text found in document!")
+            raise ValueError("No text found!")
 
         self.embeddings = self.embed_model.encode(self.chunks)
 
@@ -49,7 +48,7 @@ class RAGSummarizer:
         self.index = faiss.IndexFlatL2(dim)
         self.index.add(np.array(self.embeddings))
 
-    def get_key_chunks(self, top_k=3):  # 🔥 reduce load
+    def get_key_chunks(self, top_k=3):
         if len(self.chunks) == 0:
             return []
 
@@ -66,7 +65,7 @@ class RAGSummarizer:
         key_chunks = self.get_key_chunks()
 
         if len(key_chunks) == 0:
-            return "⚠️ Could not extract meaningful content."
+            return "No content"
 
         combined_text = " ".join(key_chunks)
 
