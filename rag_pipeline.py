@@ -1,4 +1,4 @@
-import fitz
+import fitz  # PDF reader (PyMuPDF)
 import numpy as np
 import faiss
 
@@ -9,20 +9,22 @@ class RAGSummarizer:
         self.embed_model = None
         self.summarizer = None
 
-    # ✅ Lazy load models (prevents crash)
+    # Load models only when needed
     def load_models(self):
         if self.embed_model is None or self.summarizer is None:
             from sentence_transformers import SentenceTransformer
             from transformers import pipeline
 
+            # Embedding model
             self.embed_model = SentenceTransformer('all-MiniLM-L6-v2')
 
-            # ✅ Use compatible model
+            # Generation model (FLAN-T5)
             self.summarizer = pipeline(
                 "text2text-generation",
                 model="google/flan-t5-base"
             )
 
+    # Extract text from PDF or TXT
     def extract_text(self, file):
         if file.type == "application/pdf":
             doc = fitz.open(stream=file.read(), filetype="pdf")
@@ -33,6 +35,7 @@ class RAGSummarizer:
         else:
             return file.read().decode("utf-8")
 
+    # Split text into chunks
     def chunk_text(self, text, chunk_size=100):
         words = text.split()
         return [
@@ -40,8 +43,9 @@ class RAGSummarizer:
             for i in range(0, len(words), chunk_size)
         ]
 
+    # Build FAISS index
     def build_index(self, text):
-        self.load_models()  # ✅ load here safely
+        self.load_models()
 
         self.chunks = self.chunk_text(text)
 
@@ -54,28 +58,34 @@ class RAGSummarizer:
         self.index = faiss.IndexFlatL2(dim)
         self.index.add(np.array(self.embeddings))
 
-    def get_key_chunks(self, top_k=3):
-        if len(self.chunks) == 0:
-            return []
+    # 🔥 REAL RAG RETRIEVAL
+    def retrieve(self, query, top_k=3):
+        query_embedding = self.embed_model.encode([query])
 
-        top_k = min(top_k, len(self.chunks))
+        distances, indices = self.index.search(
+            np.array(query_embedding), top_k
+        )
 
-        centroid = np.mean(self.embeddings, axis=0)
+        return [self.chunks[i] for i in indices[0]]
 
-        distances = np.linalg.norm(self.embeddings - centroid, axis=1)
-        indices = np.argsort(distances)[:top_k]
+    # Generate answer using retrieved chunks
+    def summarize(self, query, max_len=120, min_len=40):
+        retrieved_chunks = self.retrieve(query)
 
-        return [self.chunks[i] for i in indices]
+        if len(retrieved_chunks) == 0:
+            return "⚠️ No relevant content found."
 
-    def summarize(self, max_len=120, min_len=40):
-        key_chunks = self.get_key_chunks()
+        context = " ".join(retrieved_chunks)
 
-        if len(key_chunks) == 0:
-            return "⚠️ No meaningful content found."
+        prompt = f"""
+        Answer the question based on the context below:
 
-        combined_text = " ".join(key_chunks)
+        Context:
+        {context}
 
-        prompt = f"Summarize the following text:\n{combined_text}"
+        Question:
+        {query}
+        """
 
         summary = self.summarizer(
             prompt,
